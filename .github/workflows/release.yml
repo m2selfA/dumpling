@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows release
+    runs-on: ${{ vars.DUMPLING_WINDOWS_RUNNER || 'windows-2022' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --bins --features gui
+      - name: Package Windows artifacts
+        shell: pwsh
+        run: Compress-Archive -Path target/release/dumpling.exe,target/release/dumpling-cli.exe -DestinationPath "dumpling-${{ github.ref_name }}-windows-x86_64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dumpling-${{ github.ref_name }}-windows-x86_64.zip
+
+  macos:
+    name: macOS release
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --bins --features gui
+      - name: Package macOS artifacts
+        run: tar -C target/release -czf "dumpling-${{ github.ref_name }}-macos.tar.gz" dumpling dumpling-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dumpling-${{ github.ref_name }}-macos.tar.gz
+
+  linux:
+    name: Linux CLI release (glibc 2.17)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and package in manylinux2014
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euxo pipefail
+          docker run --rm \
+            -e RELEASE_TAG \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            quay.io/pypa/manylinux2014_x86_64 \
+            bash -euxo pipefail -c '
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+              source "$HOME/.cargo/env"
+              cargo build --bin dumpling-cli --release
+              glibc_symbols=$(objdump -T target/release/dumpling-cli | grep -oE "GLIBC_[0-9.]+" | sort -V | uniq || true)
+              printf "%s\n" "$glibc_symbols" | tail -1
+              max_glibc=$(printf "%s\n" "$glibc_symbols" | sort -V | tail -1)
+              if [ -n "$max_glibc" ] && [ "$(printf "%s\n" "$max_glibc" "GLIBC_2.17" | sort -V | tail -1)" != "GLIBC_2.17" ]; then
+                echo "dumpling-cli requires glibc newer than 2.17: $max_glibc" >&2
+                exit 1
+              fi
+              tar -C target/release -czf "/workspace/dumpling-${RELEASE_TAG}-linux-x86_64-glibc217.tar.gz" dumpling-cli
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64-glibc217
+          path: dumpling-${{ github.ref_name }}-linux-x86_64-glibc217.tar.gz
+
+  github-release:
+    name: Create GitHub release
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes

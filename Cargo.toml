@@ -1,0 +1,38 @@
+[package]
+name = "dumpling"
+edition = "2021"
+description = "Local GUI for sharing and joining a TCP service over iroh"
+rust-version = "1.91"
+build = "build.rs"
+
+[[bin]]
+name = "dumpling"
+path = "src/main.rs"
+required-features = ["gui"]
+
+[[bin]]
+name = "dumpling-cli"
+path = "src/bin/dumpling-cli.rs"
+
+[features]
+default = []
+gui = ["dep:windui"]
+
+[dependencies]
+iroh = { version = "1", default-features = false, features = ["tls-ring"] }
+iroh-tickets = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal"] }
+tokio-util = "0.7"
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+windui = { version = "0.15", optional = true, default-features = false, features = ["d2d"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+# Size-oriented production profile. Keep panic unwinding for service failure semantics.
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

@@ -1,0 +1,4 @@
+target/
+*.ticket
+*.stdout
+*.stderr
