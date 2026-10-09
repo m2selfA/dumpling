@@ -62,7 +62,7 @@ jobs:
               cargo test --bin dumpling-cli --release
               cargo clippy --bin dumpling-cli --release -- -D warnings
               cargo build --bin dumpling-cli --release
-              ldd --version | head -1
+              ldd --version
               glibc_symbols=$(objdump -T target/release/dumpling-cli | grep -oE "GLIBC_[0-9.]+" | sort -V | uniq || true)
               printf "%s\n" "$glibc_symbols" | tail -1
               if printf "%s\n" "$glibc_symbols" | grep -E "GLIBC_2\\.(1[8-9]|[2-9][0-9])|GLIBC_[3-9]" >/dev/null; then
