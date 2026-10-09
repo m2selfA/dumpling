@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 
@@ -10,6 +11,23 @@ use tokio_util::sync::CancellationToken;
 
 pub const ALPN: &[u8] = b"DUMBPIPEV0";
 const HANDSHAKE: [u8; 5] = *b"hello";
+
+fn format_error(stage: &str, err: impl Display + Debug) -> String {
+    format!("stage={stage} error={err} error_debug={err:?}")
+}
+
+fn format_connection_error(
+    stage: &str,
+    connection: &iroh::endpoint::Connection,
+    remote: &str,
+    err: impl Display + Debug,
+) -> String {
+    format!(
+        "stage={stage} peer={:?} remote={remote} close_reason={:?} error={err} error_debug={err:?}",
+        connection.remote_id(),
+        connection.close_reason(),
+    )
+}
 
 pub fn parse_ticket(text: &str) -> Result<EndpointTicket, String> {
     text.trim()
@@ -118,19 +136,22 @@ async fn forward_out(
     addr: EndpointAddr,
     cancel: CancellationToken,
 ) -> Result<(), String> {
+    let remote = format!("{addr:?}");
     let connection = endpoint
         .connect(addr, ALPN)
         .await
-        .map_err(|err| format!("连接失败：{err}"))?;
+        .map_err(|err| format_error("connect", err))?;
     let (mut send, recv) = connection
         .open_bi()
         .await
-        .map_err(|err| format!("打开流失败：{err}"))?;
+        .map_err(|err| format_connection_error("open_stream", &connection, &remote, err))?;
     send.write_all(&HANDSHAKE)
         .await
-        .map_err(|err| format!("握手失败：{err}"))?;
+        .map_err(|err| format_connection_error("handshake_write", &connection, &remote, err))?;
     let (read, write) = stream.into_split();
-    forward(read, write, recv, send, cancel).await
+    forward(read, write, recv, send, cancel)
+        .await
+        .map_err(|err| format_connection_error("forward", &connection, &remote, err))
 }
 
 async fn forward_in(
@@ -138,25 +159,33 @@ async fn forward_in(
     target: SocketAddr,
     cancel: CancellationToken,
 ) -> Result<(), String> {
+    let remote = format!("{:?}", accepting.remote_addr());
     let connection = accepting
         .await
-        .map_err(|err| format!("接收连接失败：{err}"))?;
+        .map_err(|err| format!("remote={remote} {}", format_error("accept_connection", err)))?;
     let (send, mut recv) = connection
         .accept_bi()
         .await
-        .map_err(|err| format!("接收流失败：{err}"))?;
+        .map_err(|err| format_connection_error("accept_stream", &connection, &remote, err))?;
     let mut buf = [0u8; HANDSHAKE.len()];
     recv.read_exact(&mut buf)
         .await
-        .map_err(|err| format!("握手失败：{err}"))?;
+        .map_err(|err| format_connection_error("handshake_read", &connection, &remote, err))?;
     if buf != HANDSHAKE {
-        return Err("握手不匹配".into());
+        return Err(format_connection_error(
+            "handshake_validate",
+            &connection,
+            &remote,
+            "handshake mismatch",
+        ));
     }
     let stream = TcpStream::connect(target)
         .await
-        .map_err(|err| format!("无法连接 {target}：{err}"))?;
+        .map_err(|err| format_connection_error("target_connect", &connection, &remote, err))?;
     let (read, write) = stream.into_split();
-    forward(read, write, recv, send, cancel).await
+    forward(read, write, recv, send, cancel)
+        .await
+        .map_err(|err| format_connection_error("forward", &connection, &remote, err))
 }
 
 async fn forward(
@@ -178,13 +207,19 @@ async fn forward(
         let mut write = write;
         tokio::select! {
             result = tokio::io::copy(&mut recv, &mut write) => {
-                result.map(|_| ()).map_err(|err| err.to_string())
+                result
+                    .map(|_| ())
+                    .map_err(|err| format_error("remote_to_local_copy", err))
             }
             _ = cancel.cancelled() => Ok(()),
         }
     });
-    to_remote.await.map_err(|err| err.to_string())??;
-    from_remote.await.map_err(|err| err.to_string())??;
+    to_remote
+        .await
+        .map_err(|err| format_error("local_to_remote_task", err))??;
+    from_remote
+        .await
+        .map_err(|err| format_error("remote_to_local_task", err))??;
     Ok(())
 }
 
@@ -194,6 +229,23 @@ async fn copy_to_send(
 ) -> Result<(), String> {
     tokio::io::copy(&mut read, &mut send)
         .await
-        .map_err(|err| err.to_string())?;
-    send.shutdown().await.map_err(|err| err.to_string())
+        .map_err(|err| format_error("local_to_remote_copy", err))?;
+    send.shutdown()
+        .await
+        .map_err(|err| format_error("local_to_remote_shutdown", err))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_includes_display_and_debug_error() {
+        let source = std::io::Error::new(std::io::ErrorKind::TimedOut, "probe");
+        let rendered = format_error("probe_stage", source);
+
+        assert!(rendered.contains("stage=probe_stage"));
+        assert!(rendered.contains("error=probe"));
+        assert!(rendered.contains("error_debug="));
+    }
 }
