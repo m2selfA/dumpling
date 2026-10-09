@@ -30,17 +30,17 @@ fn main() {
         Ok(Command::ShareHelp) => print_share_help(),
         Ok(Command::Version) => println!("{}", env!("CARGO_PKG_VERSION")),
         Ok(Command::Connect) => {
-            eprintln!("connect 子命令尚未实现");
+            eprintln!("the connect subcommand is not implemented yet");
             std::process::exit(2);
         }
         Ok(Command::Share(config)) => {
             if let Err(err) = run(config) {
-                eprintln!("错误：{err}");
+                eprintln!("Error: {err}");
                 std::process::exit(1);
             }
         }
         Err(err) => {
-            eprintln!("错误：{err}\n\n{}", usage());
+            eprintln!("Error: {err}\n\n{}", usage());
             std::process::exit(2);
         }
     }
@@ -49,17 +49,19 @@ fn main() {
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
     let mut args = args.into_iter();
     match args.next().as_deref() {
-        None => Err("缺少子命令：share".into()),
+        None => Err("missing subcommand: share".into()),
         Some("-h" | "--help") => Ok(Command::Help),
         Some("-V" | "--version") => Ok(Command::Version),
         Some("share") => parse_share_args(args),
         Some("connect") => {
             if let Some(arg) = args.next() {
-                return Err(format!("connect 尚未实现，无法识别参数：{arg}"));
+                return Err(format!(
+                    "connect is not implemented; unrecognized argument: {arg}"
+                ));
             }
             Ok(Command::Connect)
         }
-        Some(command) => Err(format!("未知子命令：{command}")),
+        Some(command) => Err(format!("unknown subcommand: {command}")),
     }
 }
 
@@ -74,19 +76,25 @@ fn parse_share_args(args: impl IntoIterator<Item = String>) -> Result<Command, S
             "-h" | "--help" => return Ok(Command::ShareHelp),
             "-V" | "--version" => return Ok(Command::Version),
             "-p" | "--port" => {
-                let value = args.next().ok_or_else(|| format!("{arg} 需要端口参数"))?;
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("{arg} requires a port"))?;
                 target.set_port(parse_port(&value)?);
             }
             "-t" | "--target" => {
-                let value = args.next().ok_or_else(|| format!("{arg} 需要地址参数"))?;
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("{arg} requires an address"))?;
                 target = parse_target(&value)?;
             }
             "-o" | "--ticket-file" => {
-                let value = args.next().ok_or_else(|| format!("{arg} 需要文件路径"))?;
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("{arg} requires a file path"))?;
                 ticket_file = Some(PathBuf::from(value));
             }
-            _ if arg.starts_with('-') => return Err(format!("未知参数：{arg}")),
-            _ if positional_port => return Err("只能指定一个位置端口参数".into()),
+            _ if arg.starts_with('-') => return Err(format!("unknown option: {arg}")),
+            _ if positional_port => return Err("only one positional port may be specified".into()),
             _ => {
                 target.set_port(parse_port(&arg)?);
                 positional_port = true;
@@ -103,9 +111,9 @@ fn parse_share_args(args: impl IntoIterator<Item = String>) -> Result<Command, S
 fn parse_port(value: &str) -> Result<u16, String> {
     let port = value
         .parse::<u16>()
-        .map_err(|_| format!("端口无效：{value}（应为 1 到 65535）"))?;
+        .map_err(|_| format!("invalid port: {value} (expected 1 to 65535)"))?;
     if port == 0 {
-        return Err("端口应该是 1 到 65535 的数字".into());
+        return Err("port must be a number from 1 to 65535".into());
     }
     Ok(port)
 }
@@ -113,9 +121,9 @@ fn parse_port(value: &str) -> Result<u16, String> {
 fn parse_target(value: &str) -> Result<SocketAddr, String> {
     let target = value
         .parse::<SocketAddr>()
-        .map_err(|err| format!("目标地址无效：{value}（{err}）"))?;
+        .map_err(|err| format!("invalid target address: {value} ({err})"))?;
     if target.port() == 0 {
-        return Err("目标端口应该是 1 到 65535 的数字".into());
+        return Err("target port must be a number from 1 to 65535".into());
     }
     Ok(target)
 }
@@ -133,18 +141,18 @@ fn print_share_help() {
 }
 
 fn usage() -> &'static str {
-    "用法：dumpling-cli <子命令> [选项]\n\n子命令：\n  share                     共享本机 TCP 服务\n  connect                   预留：连接远端 ticket\n\n全局选项：\n  -h, --help                显示帮助\n  -V, --version             显示版本"
+    "Usage: dumpling-cli <COMMAND> [OPTIONS]\n\nCommands:\n  share                     Share a local TCP service\n  connect                   Reserved for connecting to a remote ticket\n\nGlobal options:\n  -h, --help                Show help\n  -V, --version             Show version"
 }
 
 fn share_usage() -> &'static str {
-    "用法：dumpling-cli share [选项] [端口]\n\n选项：\n  -p, --port <PORT>          要共享的本机服务端口（默认 8080）\n  -t, --target <ADDR>        完整目标地址（默认 127.0.0.1:8080）\n  -o, --ticket-file <PATH>   将 ticket 写入文件\n  -h, --help                 显示帮助\n  -V, --version              显示版本\n\n启动后会把 ticket 输出到 stdout，并持续共享；按 Ctrl+C 停止。"
+    "Usage: dumpling-cli share [OPTIONS] [PORT]\n\nOptions:\n  -p, --port <PORT>          Local service port to share (default: 8080)\n  -t, --target <ADDR>        Full target address (default: 127.0.0.1:8080)\n  -o, --ticket-file <PATH>   Write the ticket to a file\n  -h, --help                 Show help\n  -V, --version              Show version\n\nThe ticket is printed to stdout and the service keeps running until Ctrl+C."
 }
 
 fn run(config: Config) -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .map_err(|err| format!("无法创建 tokio runtime：{err}"))?;
+        .map_err(|err| format!("could not create the Tokio runtime: {err}"))?;
     runtime.block_on(run_async(config))
 }
 
@@ -158,8 +166,8 @@ async fn run_async(config: Config) -> Result<(), String> {
 
     let ready = tokio::task::spawn_blocking(move || ready_rx.recv_timeout(Duration::from_secs(10)))
         .await
-        .map_err(|err| format!("等待共享器启动失败：{err}"))?
-        .map_err(|err| format!("等待 ticket 失败：{err}"))?;
+        .map_err(|err| format!("failed while waiting for the sharing service to start: {err}"))?
+        .map_err(|err| format!("failed while waiting for the ticket: {err}"))?;
 
     let ticket = match ready {
         Ok(ticket) => ticket,
@@ -171,27 +179,28 @@ async fn run_async(config: Config) -> Result<(), String> {
     };
 
     let mut stdout = std::io::stdout().lock();
-    writeln!(stdout, "{ticket}").map_err(|err| format!("写出 ticket 失败：{err}"))?;
+    writeln!(stdout, "{ticket}").map_err(|err| format!("failed to write the ticket: {err}"))?;
     stdout
         .flush()
-        .map_err(|err| format!("刷新 ticket 输出失败：{err}"))?;
+        .map_err(|err| format!("failed to flush the ticket output: {err}"))?;
 
     if let Some(path) = config.ticket_file {
         fs::write(&path, format!("{ticket}\n"))
-            .map_err(|err| format!("写入 ticket 文件 {} 失败：{err}", path.display()))?;
-        eprintln!("ticket 已写入 {}", path.display());
+            .map_err(|err| format!("failed to write the ticket file {}: {err}", path.display()))?;
+        eprintln!("ticket written to {}", path.display());
     }
-    eprintln!("正在共享 {}，按 Ctrl+C 停止。", config.target);
+    eprintln!("Sharing {}. Press Ctrl+C to stop.", config.target);
 
     if let Err(err) = tokio::signal::ctrl_c().await {
         cancel.cancel();
         let _ = task.await;
-        return Err(format!("监听 Ctrl+C 失败：{err}"));
+        return Err(format!("failed to listen for Ctrl+C: {err}"));
     }
 
     cancel.cancel();
-    task.await.map_err(|err| format!("停止共享器失败：{err}"))?;
-    eprintln!("共享器已停止。");
+    task.await
+        .map_err(|err| format!("failed to stop the sharing service: {err}"))?;
+    eprintln!("Sharing service stopped.");
     Ok(())
 }
 

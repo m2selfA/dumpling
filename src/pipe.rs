@@ -32,7 +32,7 @@ fn format_connection_error(
 pub fn parse_ticket(text: &str) -> Result<EndpointTicket, String> {
     text.trim()
         .parse()
-        .map_err(|err| format!("ticket 无效：{err}"))
+        .map_err(|err| format!("invalid ticket: {err}"))
 }
 
 pub async fn serve_client(
@@ -45,9 +45,9 @@ pub async fn serve_client(
         Ok(listener) => listener,
         Err(err) => {
             let message = if local.port() == 0 {
-                format!("无法找到可用的本机端口：{err}")
+                format!("could not find an available local port: {err}")
             } else {
-                format!("无法监听 {local}：{err}")
+                format!("could not listen on {local}: {err}")
             };
             let _ = ready.send(Err(message));
             return;
@@ -56,7 +56,9 @@ pub async fn serve_client(
     let bound = match listener.local_addr() {
         Ok(addr) => addr,
         Err(err) => {
-            let _ = ready.send(Err(format!("无法读取本机监听端口：{err}")));
+            let _ = ready.send(Err(format!(
+                "could not read the local listening port: {err}"
+            )));
             return;
         }
     };
@@ -127,7 +129,7 @@ async fn bind_endpoint() -> Result<Endpoint, String> {
         .alpns(vec![ALPN.to_vec()])
         .bind()
         .await
-        .map_err(|err| format!("无法建立连接端点：{err}"))
+        .map_err(|err| format!("could not create the endpoint: {err}"))
 }
 
 async fn forward_out(

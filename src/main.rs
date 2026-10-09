@@ -38,7 +38,7 @@ fn main() {
     let mode = signal(0usize);
     let ticket = signal(String::new());
     let host_port = signal(String::from("8080"));
-    let status = signal(String::from("粘贴 ticket 后连接"));
+    let status = signal(String::from("Paste a ticket to connect"));
     let window_icon = app_icon();
     let tray_icon = app_icon();
 
@@ -48,14 +48,14 @@ fn main() {
         .on_left_click(|ctx| ctx.show_window())
         .on_double_click(|ctx| ctx.show_window())
         .menu(vec![
-            TrayMenuItem::item("显示窗口", |ctx| ctx.show_window()),
-            TrayMenuItem::item("在浏览器中打开", |_| open_current()),
-            TrayMenuItem::item("断开", move |_| {
+            TrayMenuItem::item("Show window", |ctx| ctx.show_window()),
+            TrayMenuItem::item("Open in browser", |_| open_current()),
+            TrayMenuItem::item("Disconnect", move |_| {
                 stop();
-                status.set("已断开".into());
+                status.set("Disconnected".into());
             }),
             TrayMenuItem::separator(),
-            TrayMenuItem::item("退出", |ctx| {
+            TrayMenuItem::item("Exit", |ctx| {
                 stop();
                 ctx.quit();
             }),
@@ -66,7 +66,7 @@ fn main() {
             .width_match()
             .spacing(8)
             .child(
-                Element::text_input(ticket, "粘贴 ticket")
+                Element::text_input(ticket, "Paste ticket")
                     .weight(1.0)
                     .on_submit(move |ctx| {
                         if connect(ticket.get(), status) {
@@ -74,7 +74,7 @@ fn main() {
                         }
                     }),
             )
-            .child(Element::button("连接").on_click(move |ctx| {
+            .child(Element::button("Connect").on_click(move |ctx| {
                 if connect(ticket.get(), status) {
                     ctx.hide_window();
                 }
@@ -84,8 +84,8 @@ fn main() {
         Element::row()
             .width_match()
             .spacing(8)
-            .child(Element::text_input(host_port, "共享服务端口").weight(1.0))
-            .child(Element::button("共享").on_click(move |_| {
+            .child(Element::text_input(host_port, "Service port to share").weight(1.0))
+            .child(Element::button("Share").on_click(move |_| {
                 if share(host_port.get(), ticket, status) {
                     mode.set(0);
                 }
@@ -99,7 +99,7 @@ fn main() {
         .bg(Color::hex(0xF7F4EE))
         .child(Element::label("Dumpling").font_size(22.0).width_match())
         .child(
-            Element::tabs_pill(mode, vec![("连接", connect_page), ("共享", share_page)])
+            Element::tabs_pill(mode, vec![("Connect", connect_page), ("Share", share_page)])
                 .width_match()
                 .weight(1.0),
         )
@@ -123,7 +123,7 @@ fn connect(ticket: String, status: Signal<String>) -> bool {
         }
     };
     stop();
-    status.set("正在寻找可用端口…".into());
+    status.set("Looking for an available local port...".into());
     let cancel = CancellationToken::new();
     let (tx, rx) = mpsc::channel();
     let task_cancel = cancel.clone();
@@ -145,7 +145,7 @@ fn connect(ticket: String, status: Signal<String>) -> bool {
                 guard.url = url.clone();
             }
             open_browser(&url);
-            status.set(format!("已打开 {url}，窗口已收到托盘"));
+            status.set(format!("Opened {url}; the window is now in the tray"));
             true
         }
         Ok(Err(err)) => {
@@ -155,7 +155,7 @@ fn connect(ticket: String, status: Signal<String>) -> bool {
         }
         Err(_) => {
             cancel.cancel();
-            status.set("启动超时".into());
+            status.set("Startup timed out".into());
             false
         }
     }
@@ -164,19 +164,19 @@ fn connect(ticket: String, status: Signal<String>) -> bool {
 fn share(port: String, ticket: Signal<String>, status: Signal<String>) -> bool {
     let port = port.trim();
     let Ok(port) = port.parse::<u16>() else {
-        status.set("端口应该是 1 到 65535 的数字".into());
+        status.set("Port must be a number from 1 to 65535".into());
         return false;
     };
     if port == 0 {
-        status.set("端口应该是 1 到 65535 的数字".into());
+        status.set("Port must be a number from 1 to 65535".into());
         return false;
     }
     let Ok(target) = format!("127.0.0.1:{port}").parse() else {
-        status.set("端口无效".into());
+        status.set("Invalid port".into());
         return false;
     };
     stop();
-    status.set(format!("正在共享 127.0.0.1:{port}…"));
+    status.set(format!("Sharing 127.0.0.1:{port}..."));
     let cancel = CancellationToken::new();
     let (tx, rx) = mpsc::channel();
     let task_cancel = cancel.clone();
@@ -190,7 +190,7 @@ fn share(port: String, ticket: Signal<String>, status: Signal<String>) -> bool {
                 let mut guard = session().lock().expect("session");
                 guard.cancel = Some(cancel);
             }
-            status.set("ticket 已填入连接页，请复制给对方".into());
+            status.set("Ticket copied to the Connect page; copy it to the peer".into());
             true
         }
         Ok(Err(err)) => {
@@ -200,7 +200,7 @@ fn share(port: String, ticket: Signal<String>, status: Signal<String>) -> bool {
         }
         Err(_) => {
             cancel.cancel();
-            status.set("共享超时".into());
+            status.set("Sharing timed out".into());
             false
         }
     }

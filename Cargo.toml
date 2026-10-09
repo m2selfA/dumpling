@@ -1,6 +1,6 @@
 [package]
 name = "dumpling"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Local GUI for sharing and joining a TCP service over iroh"
 rust-version = "1.91"
